@@ -1,0 +1,7 @@
+3dgs_under_attack/
+data/
+sam_ckpt/
+arch_project/sam_ckpt/
+arch_project/data/
+gaussian-splatting/
+output/

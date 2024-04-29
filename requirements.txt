@@ -1,0 +1,6 @@
+torch
+torchvision
+segment_anything
+git+https://github.com/openai/CLIP.git
+opencv-python
+

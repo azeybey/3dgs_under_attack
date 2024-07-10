@@ -24,7 +24,7 @@ def segment(indx, image):
 
         image = image * seg_image_masks[i][:, :, None]
         image = to_pil_image(image)                       
-        #image.save(save_folder + "/segmented_" + str(i) + "_" + data_list[indx])
+        image.save(save_folder + "/segmented_" + str(i) + "_" + data_list[indx])
 
     seg_images_ = [seg_images[i].transpose(2, 0, 1)[None, ...] for i in range(len(seg_images))]
     #seg_images_torch = torch.from_numpy(seg_images_)
@@ -234,7 +234,7 @@ def unnormalize(im):
 
 def predict(image):
     with torch.no_grad():
-        image = transform(to_pil_image(image)).unsqueeze(0).to("cuda:1")
+        image = transform(to_pil_image(image)).unsqueeze(0).to("cpu")
 
         outputs, _ = model(image, text)
         probs = outputs.softmax(dim=-1)
@@ -268,11 +268,11 @@ def generate_noise(indx, image_orj, seg_images, seg_image_masks, seg_map, learni
             best_image_id = i
             best_image = img
     print(f"Best segmented image ID:{best_image_id}, Confidence:{best_pred}")
-    #to_pil_image(best_image).save(save_folder + "/best_segment_" + data_list[indx])
+    to_pil_image((seg_map[best_image_id]["segmentation"]  * 255).astype(np.uint8) ).save(save_folder + "/best_segment_" + data_list[indx])
 
     image = to_pil_image(image_orj)
 
-    image = transform(image).unsqueeze(0).to("cuda:1")
+    image = transform(image).unsqueeze(0).to("cpu")
     image_original = image.clone()
     image_original_np = image_original.detach().cpu().numpy()
     criterion = torch.nn.CrossEntropyLoss()
@@ -284,12 +284,13 @@ def generate_noise(indx, image_orj, seg_images, seg_image_masks, seg_map, learni
     
 
     for step in range(it):
+
         image.requires_grad = True
 
         outputs, _ = model(image, text)
         probs = outputs.softmax(dim=-1).detach().cpu().numpy()
 
-        loss = criterion(outputs, torch.tensor([true_label], device="cuda:1"))
+        loss = criterion(outputs, torch.tensor([true_label], device="cpu"))
         model.zero_grad()
         loss.backward()
 
@@ -302,7 +303,7 @@ def generate_noise(indx, image_orj, seg_images, seg_image_masks, seg_map, learni
             image += learning_rate * image.grad.sign()
             noise += learning_rate * image.grad.sign()
 
-        image = torch.from_numpy(image.clone().detach().cpu().numpy() * seg_image_mask[None, None, :, :] + inverse_image_original_np).to("cuda:1")
+        image = torch.from_numpy(image.clone().detach().cpu().numpy() * seg_image_mask[None, None, :, :] + inverse_image_original_np).to("cpu")
         image = clip_values(image)
 
     image = unnormalize(image)
@@ -325,9 +326,11 @@ def generate_noise(indx, image_orj, seg_images, seg_image_masks, seg_map, learni
     to_pil_image(merged_img).save(save_folder + "/" + data_list[indx])
 
     noise = unnormalize(noise)
-    noise *= seg_image_mask[None, :, :]
+    masked_noise = noise * seg_image_mask[None, :, :]
     noise = resize_transform(noise.unsqueeze(0)).squeeze(0)
+    masked_noise = resize_transform(masked_noise.unsqueeze(0)).squeeze(0)
     #to_pil_image(noise).save(save_folder + "/noise_" + data_list[indx])
+    #to_pil_image(masked_noise).save(save_folder + "/masked_noise_" + data_list[indx])
 
     merged_orj_im = (image_orj + noise).clamp(0, 255)
     predict(merged_orj_im)
@@ -359,12 +362,12 @@ def run(image_list):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, default="apple")
-    parser.add_argument('--true_label_name', type=str, default="apple")
+    parser.add_argument('--dataset_name', type=str, default="hydrant")
+    parser.add_argument('--true_label_name', type=str, default="hydrant")
     parser.add_argument('--target_label_name', type=str, default="stop sign")
     parser.add_argument('--resolution', type=int, default=1600)
     parser.add_argument('--sam_ckpt_name', type=str, default="sam_vit_h_4b8939.pth")
-    parser.add_argument('--clip_model', type=str, default="ViT-B/32")
+    parser.add_argument('--clip_model', type=str, default="ViT-B/16")
     #['RN50', 'RN101', 'RN50x4', 'RN50x16', 'ViT-B/32', 'ViT-B/16']
     args = parser.parse_args()
     torch.set_default_dtype(torch.float32)
@@ -378,13 +381,15 @@ if __name__ == '__main__':
     url = "https://storage.googleapis.com/download.tensorflow.org/data/imagenet_class_index.json"
     class_idx = json.load(urllib.request.urlopen(url))
     imagenet_classes = [class_idx[str(k)][1] for k in range(len(class_idx))]
+    #imagenet_classes = [class_idx[str(k)][1] for k in range(0, len(class_idx), 2)]
 
+    
     if torch.cuda.is_available():
         device = "cuda"
     else:
         device = "cpu"
 
-    model, transform = clip.load(args.clip_model, device="cuda:1") 
+    model, transform = clip.load(args.clip_model, device="cpu") 
 
     true_label_name = args.true_label_name
     target_label_name = args.target_label_name
@@ -392,13 +397,13 @@ if __name__ == '__main__':
     true_label = find_or_add_label(true_label_name, imagenet_classes)
     target_label = find_or_add_label(target_label_name, imagenet_classes)
 
-    text = clip.tokenize(imagenet_classes).to("cuda:1")
+    text = clip.tokenize(imagenet_classes).to("cpu")
 
     #   CLIP's normalization parameters
     mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1)
     std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1)
 
-    sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cuda')
+    sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cpu')
     mask_generator = SamAutomaticMaskGenerator(
         model=sam,
         points_per_side=32,

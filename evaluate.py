@@ -13,7 +13,7 @@ from PIL import Image
 
 def predict(image):
     with torch.no_grad():
-        image = transform(to_pil_image(image)).unsqueeze(0).to("cuda:1")
+        image = transform(to_pil_image(image)).unsqueeze(0).to("cpu")
 
         outputs, _ = model(image, text)
         probs = outputs.softmax(dim=-1)
@@ -57,7 +57,7 @@ def run(image_list_plain, image_list_noisy):
 
     for i in range(len(image_list_plain)):
 
-        print(f"Result of plain image {i} :")
+        print(f"Result of plain image {data_list_plain[i]} :")
         res, probs = predict(image_list_plain[i])
         result_gt += res
         if true_label == probs[0,0]:
@@ -66,7 +66,7 @@ def run(image_list_plain, image_list_noisy):
         elif true_label in probs:
             top5gt += 1
 
-        print(f"Result of noisy image {i} :")
+        print(f"Result of noisy image {data_list_noisy[i]} :")
         res_n, probs_n = predict(image_list_noisy[i])
         result_no += res_n
         if true_label == probs_n[0,0]:
@@ -78,21 +78,21 @@ def run(image_list_plain, image_list_noisy):
         print("\n")
 
     i += 1
-    print(f"Avarage ground truth confidence = {str(result_gt.cpu().numpy() / i)}, Top1 Accuracy {str(top1gt / i)}, Top5 Accuracy {str(top5gt / i)} ")
+    print(f"Avarage plain confidence = {str(result_gt.cpu().numpy() / i)}, Top1 Accuracy {str(top1gt / i)}, Top5 Accuracy {str(top5gt / i)} ")
     print(f"Avarage noisy confidence = {str(result_no.cpu().numpy() / i)}, Top1 Accuracy {str(top1no / i)}, Top5 Accuracy {str(top5no / i)} ")
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, default="apple")
-    parser.add_argument('--true_label_name', type=str, default="apple")
+    parser.add_argument('--dataset_name', type=str, default="mouse")
+    parser.add_argument('--true_label_name', type=str, default="mouse")
     parser.add_argument('--target_label_name', type=str, default="tree")
-    parser.add_argument('--plain_folder', type=str, default="output/apple_plain/train/ours_30000/renders")
-    parser.add_argument('--noisy_folder', type=str, default="output/apple_noisy/train/ours_30000/renders")
+    parser.add_argument('--plain_folder', type=str, default="renders/mouse/images")
+    parser.add_argument('--noisy_folder', type=str, default="renders/mouse/images_noisy")
     parser.add_argument('--resolution', type=int, default=1600)
     parser.add_argument('--sam_ckpt_name', type=str, default="sam_vit_h_4b8939.pth")
-    parser.add_argument('--clip_model', type=str, default="ViT-B/32")
+    parser.add_argument('--clip_model', type=str, default="ViT-B/16")
     #['RN50', 'RN101', 'RN50x4', 'RN50x16', 'ViT-B/32', 'ViT-B/16']
     args = parser.parse_args()
     torch.set_default_dtype(torch.float32)
@@ -117,7 +117,7 @@ if __name__ == '__main__':
     else:
         device = "cpu"
 
-    model, transform = clip.load(args.clip_model, device="cuda:1") 
+    model, transform = clip.load(args.clip_model, device="cpu") 
 
     true_label_name = args.true_label_name
     target_label_name = args.target_label_name
@@ -126,13 +126,13 @@ if __name__ == '__main__':
     target_label = find_or_add_label(target_label_name, imagenet_classes)
 
 
-    text = clip.tokenize(imagenet_classes).to("cuda:1")
+    text = clip.tokenize(imagenet_classes).to("cpu")
 
     #   CLIP's normalization parameters
     mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1)
     std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1)
 
-    sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cuda')
+    sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cpu')
     mask_generator = SamAutomaticMaskGenerator(
         model=sam,
         points_per_side=32,
@@ -146,10 +146,22 @@ if __name__ == '__main__':
 
     img_list = []
     for data_path in data_list_plain:
+        if data_path[0] == ".":
+            data_list_plain.remove(data_path)
+            continue
         image_path = os.path.join(img_folder_plain, data_path)
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+        h, w = image.shape[:2]
+        aspect_ratio = h / w
+        new_h = int(args.resolution * aspect_ratio)
+
+        if aspect_ratio != 1:
+            print("Aspect ratio of input image is not 1. Adjusting input.. Height : " + str(h) + "  Width :" + str(w))
+            new_size = min(w, h)
+            image = image[0:new_size, 0:new_size]
+            
         image = torch.from_numpy(image)
         img_list.append(image)
 
@@ -159,9 +171,21 @@ if __name__ == '__main__':
 
     img_list = []
     for data_path in data_list_noisy:
+        if data_path[0] == ".":
+            data_list_noisy.remove(data_path)
+            continue
         image_path = os.path.join(img_folder_noisy, data_path)
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        h, w = image.shape[:2]
+        aspect_ratio = h / w
+        new_h = int(args.resolution * aspect_ratio)
+
+        if aspect_ratio != 1:
+            print("Aspect ratio of input image is not 1. Adjusting input.. Height : " + str(h) + "  Width :" + str(w))
+            new_size = min(w, h)
+            image = image[0:new_size, 0:new_size]
 
         image = torch.from_numpy(image)
         img_list.append(image)

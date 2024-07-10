@@ -9,6 +9,10 @@ Sign Method (M-IFGSM), a novel approach for generating adversarial noise specifi
 targeted at 3D object detection systems. This research aims to fill this gap by
 investigating the vulnerabilities of 3D models created using 3D Gaussian Splatting
 techniques when subjected to adversarial noise.
+
+<img width="834" alt="pipeline" src="https://github.com/azeybey/3dgs_under_attack/assets/12528641/5c77e844-064a-4d4c-b179-c9abb7013efb">
+
+
 Our proposed M-IFGSM method generates adversarial noise focused on masked
 regions of input images, ensuring that only the object of interest is perturbed. These
 adversarially modified images are then utilized to construct 3D Gaussian Splatting

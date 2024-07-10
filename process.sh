@@ -4,7 +4,7 @@ object_name="apple"
 
 #mkdir data/$object_name/input
 
-#ffmpeg -i data/$object_name/1.mp4 -qscale:v 1 -qmin 1 -vf fps=2 data/$object_name/input/%04d.jpg
+#ffmpeg -i data/$object_name/1.mp4 -qscale:v 1 -qmin 1 -vf "fps=,scale=1600:-1" data/$object_name/input/%04d.jpg
 
 #python image_util.py --directory_path "data/$object_name/input"
 
